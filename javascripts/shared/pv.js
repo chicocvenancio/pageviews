@@ -533,7 +533,10 @@ class Pv extends PvConfig {
    * @returns {string} lang.projectname
    */
   get project() {
-    const project = $(this.config.projectInput).val();
+    const project = this.app === 'mediaviews' ?
+      'commons.wikimedia.org' :
+      $(this.config.projectInput).val();
+
     /** Get the first 2 characters from the project code to get the language */
     return project ? project.toLowerCase().replace(/.org$/, '') : null;
   }
