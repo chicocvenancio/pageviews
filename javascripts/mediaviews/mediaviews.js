@@ -22,7 +22,7 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
     super(config);
     this.app = 'mediaviews';
     this.specialRange = null;
-    this.fileInfo = {};
+    this.entityInfo = { entities: {} };
 
     /**
      * Select2 library prints "Uncaught TypeError: XYZ is not a function" errors
@@ -81,7 +81,7 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
     let dfd = $.Deferred();
 
     // Don't re-query for files we already have data on.
-    const currentFiles = Object.keys(this.fileInfo);
+    const currentFiles = Object.keys(this.entityInfo.entities);
     files = files.filter(file => {
       return !currentFiles.includes(file);
     });
@@ -100,7 +100,7 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
       url: 'https://commons.wikimedia.org/w/api.php?action=query&prop=imageinfo&' +
         `iiprop=mediatype|size|timestamp&formatversion=2&format=json&titles=${files.join('|')}`,
       dataType: 'jsonp'
-    }).then(data => {
+    }).done(data => {
       // restore original order of files, taking into account out any file names that were normalized
       if (data.query.normalized) {
         data.query.normalized.forEach(n => {
@@ -138,9 +138,11 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
         }, fileInfo);
       });
 
-      Object.assign(this.fileInfo, fileData);
+      this.entityInfo = { entities: fileData };
 
-      return dfd.resolve(fileData);
+      return dfd.resolve(this.entityInfo);
+    }).fail(() => {
+      dfd.resolve({}); // Simply won't show the data if it could not be fetched
     });
   }
 
@@ -161,13 +163,6 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
      */
     if (this.specialRange && specialRange) {
       params.range = this.specialRange.range;
-    } else if (this.isMonthly()) {
-      params.start = moment(
-        this.monthStartDatepicker.getDate()
-      ).format('YYYY-MM');
-      params.end = moment(
-        this.monthEndDatepicker.getDate()
-      ).format('YYYY-MM');
     } else {
       params.start = this.daterangepicker.startDate.format('YYYY-MM-DD');
       params.end = this.daterangepicker.endDate.format('YYYY-MM-DD');
@@ -329,7 +324,7 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
       this.outputData = this.outputData.map(entity => {
         return Object.assign({}, entity, this.config.chartConfig[this.chartType].dataset(entity.color));
       });
-      delete this.fileInfo[removedFile];
+      delete this.entityInfo.entities[removedFile];
       this.updateChart();
     } else {
       this.getFileInfo(files).then(() => {
@@ -338,12 +333,12 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
           this.getPageViewsData(fileNames).done(pvData => {
             pvData = this.buildChartData(pvData.datasets, fileNames, 'views');
 
-            // Loop through once more to supply this.fileInfo with the pageviews data
+            // Loop through once more to supply this.entityInfo with the pageviews data
             pvData.forEach(pvEntry => {
-              // Make sure file exists in fileInfo just as a safeguard
+              // Make sure file exists in this.entityInfo just as a safeguard
               const title = pvEntry.label.replace(/^File:/, '');
-              if (this.fileInfo[title]) {
-                Object.assign(this.fileInfo[title], {
+              if (this.entityInfo.entities[title]) {
+                Object.assign(this.entityInfo.entities[title], {
                   pageviews: pvEntry.sum,
                   pageviewsAvg: pvEntry.average
                 });
@@ -357,11 +352,23 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
     }
   }
 
+  /**
+   * Get the Playcounts API URL for the given file and date range
+   * @param  {string} file - file name without File: prefix
+   * @param  {moment} startDate
+   * @param  {moment} endDate
+   * @return {string} URL
+   */
   getMPCApiUrl(file, startDate, endDate) {
     return `https://tools.wmflabs.org/mediaplaycounts/api/1/FilePlaycount/date_range/${file}/` +
       `${startDate.format(this.config.mpcDateFormat)}/${endDate.format(this.config.mpcDateFormat)}`;
   }
 
+  /**
+   * Get and process playcounts for the given files
+   * @param  {Array} files - File names without File: prefix
+   * @return {Deferred} Promise resolving with data
+   */
   getPlayCounts(files) {
     let dfd = $.Deferred(),
       totalRequestCount = files.length,
@@ -410,36 +417,13 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
         xhrData.entities.splice(fileIndex, 1);
         xhrData.datasets.splice(fileIndex, 1);
 
-        // if (this.app === 'pageviews' && errorData.status === 404) {
-        //   // check if it is a new page, and if so show a message that the data isn't available yet
-        //   $.ajax({
-        //     url: `https://${this.project}.org/w/api.php?action=query&prop=revisions&rvprop=timestamp` +
-        //       `&rvdir=newer&rvlimit=1&formatversion=2&format=json&titles=${entity}`,
-        //     dataType: 'jsonp'
-        //   }).then(data => {
-        //     const dateCreated = data.query.pages[0].revisions ? data.query.pages[0].revisions[0].timestamp : null;
-        //     if (dateCreated && moment(dateCreated).isAfter(this.maxDate)) {
-        //       const faqLink = `<a href='/pageviews/faq#todays_data'>${$.i18n('learn-more').toLowerCase()}</a>`;
-        //       this.toastWarn($.i18n('new-article-warning', faqLink));
-        //     }
-        //   });
-        // }
-
         let link = this.getFileLink(file);
 
-        // // user-friendly error messages
-        // let endpoint = 'pageviews';
-        // if (this.isUniqueDevices()) {
-        //   endpoint = 'unique-devices';
-        // } else if (this.isPagecounts()) {
-        //   endpoint = 'pagecounts';
-        // }
         xhrData.errors.push(
           `${link}: ${$.i18n('api-error', 'Playcounts API')} - ${errorData.responseJSON.title}`
         );
       }).always(() => {
         if (++count === totalRequestCount) {
-          this.playCountsData = xhrData;
           dfd.resolve(xhrData);
 
           if (failedFiles.length) {
@@ -498,11 +482,11 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
     // add summations to show up as the bottom row in the table
     const sum = datasets.reduce((a,b) => a + b.sum, 0);
     let totals = {
-      label: $.i18n('num-projects', this.formatNumber(datasets.length), datasets.length),
+      label: $.i18n('num-files', this.formatNumber(datasets.length), datasets.length),
       sum,
       average: Math.round(sum / this.numDaysInRange()),
     };
-    ['pages', 'articles', 'edits', 'images', 'users', 'activeusers', 'admins'].forEach(type => {
+    ['pageviews', 'duration', 'size'].forEach(type => {
       totals[type] = datasets.reduce((a, b) => a + b[type], 0);
     });
     $('.output-list').append(this.config.templates.tableRow(this, totals, true));
@@ -517,20 +501,48 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
    * @return {String|Number} - value
    */
   getSortProperty(item, type) {
-    if (type === 'active-users') {
-      return Number(item.activeusers);
-    } else if (type === 'label') {
-      return item.label;
+    if (type === 'file') {
+      return item.title;
+    } else if (type === 'playcounts') {
+      return item.sum;
+    } else if (type === 'date') {
+      return moment(this.formatTimestamp(item.timestamp), this.dateFormat).unix();
+    } else if (type === 'type') {
+      return item.mediatype;
     }
     return Number(item[type]);
   }
 
   /**
    * Get link to file, or message if querying for all files
-   * @override
+   * @param {string} file - Page title with or without File: prefix
+   * @returns {string} Markup
    */
   getFileLink(file) {
-    return super.getPageLink(file, 'commons.wikimedia.org');
+    file = file.replace(/^File:/, '');
+    return super.getPageLink(`File:${file}`, 'commons.wikimedia.org', file);
+  }
+
+  /**
+   * Format timestamp return from MediaWiki API
+   * @param  {string} timestamp Should be in the form YYYY-MM-DDTHH:MM:SSZ
+   * @return {string} Formatted according to this.dateFormat
+   */
+  formatTimestamp(timestamp) {
+    return moment(timestamp.substring(0, 10), 'YYYY-MM-DD').format(this.dateFormat);
+  }
+
+  /**
+   * Get a link to view the pageviews for the given file
+   * @param  {string} file File name without File: prefix
+   * @param  {string} text Link text
+   * @return {string} Markup
+   */
+  getPageviewsLink(file, text) {
+    const params = this.getParams(false), // to get start/end date values
+      page = `File:${encodeURIComponent(file.score()).replace("'", escape)}`;
+    return `<a target='_blank' href='/pageviews?start=${params.start}&end=${params.end}` +
+      `&project=commons.wikimedia.org&pages=${page}'>${text}</a>`;
   }
 
   /**

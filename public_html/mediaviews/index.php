@@ -48,15 +48,15 @@
           </label>
           <div class="radio">
             <label>
-              <input class="all-projects-radio" type="radio" name="all-projects" value="0" checked="checked">
+              <input class="all-projects-radio" type="radio" name="source" value="files" checked="checked">
                 <?php echo $I18N->msg( 'files' ); ?>
               </input>
             </label>
           </div>
           <div class="radio">
             <label>
-              <input class="all-projects-radio" id="all-projects" type="radio" name="all-projects" value="1">
-                <?php echo $I18N->msg( 'categories' ); ?>
+              <input class="all-projects-radio" id="all-projects" type="radio" name="source" value="category">
+                <?php echo $I18N->msg( 'category' ); ?>
               </input>
             </label>
           </div>
@@ -67,9 +67,9 @@
       <!-- File selector -->
       <div class="file-selector">
         <label for="site-input">
-          <?php echo $I18N->msg( 'projects' ); ?>
+          <?php echo $I18N->msg( 'files' ); ?>
           <small class="text-muted num-entities-info">
-            <?php echo $I18N->msg( 'num-projects-info', [ 'variables' => [ 10 ] ] ); ?>
+            <?php echo $I18N->msg( 'num-files-info', [ 'variables' => [ 10 ] ] ); ?>
           </small>
         </label>
         <span class="clear-pages pull-right">
@@ -101,15 +101,14 @@
       <div class="single-entity-legend hidden-lg col-md-4 col-md-offset-4 tm"></div>
       <?php
         $columns = array(
-          'label' => 'project',
-          'sum' => 'views',
+          'file' => 'file',
+          'playcounts' => 'playcounts',
           'average' => 'daily-average',
-          'pages' => 'pages',
-          'edits' => 'edits',
-          'images' => 'images',
-          'users' => 'users',
-          'active-users' => 'active-users',
-          'admins' => 'admins'
+          'pageviews' => 'pageviews',
+          'duration' => 'duration',
+          'size' => 'size',
+          'date' => 'date',
+          'type' => 'file-type',
         );
       ?>
       <table class="table table-hover table-view">
@@ -126,11 +125,6 @@
                 </span>
               </th>
             <?php } ?>
-            <th>
-              <span>
-                <?php echo $I18N->msg( 'links' ); ?>
-              </span>
-            </th>
           </tr>
         </thead>
         <tbody class="output-list"></tbody>

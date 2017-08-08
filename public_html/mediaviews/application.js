@@ -5383,7 +5383,7 @@ var MediaViews = function (_mix$with) {
 
     _this.app = 'mediaviews';
     _this.specialRange = null;
-    _this.fileInfo = {};
+    _this.entityInfo = { entities: {} };
 
     /**
      * Select2 library prints "Uncaught TypeError: XYZ is not a function" errors
@@ -5453,7 +5453,7 @@ var MediaViews = function (_mix$with) {
       var dfd = $.Deferred();
 
       // Don't re-query for files we already have data on.
-      var currentFiles = Object.keys(this.fileInfo);
+      var currentFiles = Object.keys(this.entityInfo.entities);
       files = files.filter(function (file) {
         return !currentFiles.includes(file);
       });
@@ -5473,7 +5473,7 @@ var MediaViews = function (_mix$with) {
       return $.ajax({
         url: 'https://commons.wikimedia.org/w/api.php?action=query&prop=imageinfo&' + ('iiprop=mediatype|size|timestamp&formatversion=2&format=json&titles=' + files.join('|')),
         dataType: 'jsonp'
-      }).then(function (data) {
+      }).done(function (data) {
         // restore original order of files, taking into account out any file names that were normalized
         if (data.query.normalized) {
           data.query.normalized.forEach(function (n) {
@@ -5513,9 +5513,11 @@ var MediaViews = function (_mix$with) {
           }, fileInfo);
         });
 
-        Object.assign(_this2.fileInfo, fileData);
+        _this2.entityInfo = { entities: fileData };
 
-        return dfd.resolve(fileData);
+        return dfd.resolve(_this2.entityInfo);
+      }).fail(function () {
+        dfd.resolve({}); // Simply won't show the data if it could not be fetched
       });
     }
 
@@ -5541,9 +5543,6 @@ var MediaViews = function (_mix$with) {
        */
       if (this.specialRange && specialRange) {
         params.range = this.specialRange.range;
-      } else if (this.isMonthly()) {
-        params.start = moment(this.monthStartDatepicker.getDate()).format('YYYY-MM');
-        params.end = moment(this.monthEndDatepicker.getDate()).format('YYYY-MM');
       } else {
         params.start = this.daterangepicker.startDate.format('YYYY-MM-DD');
         params.end = this.daterangepicker.endDate.format('YYYY-MM-DD');
@@ -5734,7 +5733,7 @@ var MediaViews = function (_mix$with) {
         this.outputData = this.outputData.map(function (entity) {
           return Object.assign({}, entity, _this6.config.chartConfig[_this6.chartType].dataset(entity.color));
         });
-        delete this.fileInfo[removedFile];
+        delete this.entityInfo.entities[removedFile];
         this.updateChart();
       } else {
         this.getFileInfo(files).then(function () {
@@ -5745,12 +5744,12 @@ var MediaViews = function (_mix$with) {
             _this6.getPageViewsData(fileNames).done(function (pvData) {
               pvData = _this6.buildChartData(pvData.datasets, fileNames, 'views');
 
-              // Loop through once more to supply this.fileInfo with the pageviews data
+              // Loop through once more to supply this.entityInfo with the pageviews data
               pvData.forEach(function (pvEntry) {
-                // Make sure file exists in fileInfo just as a safeguard
+                // Make sure file exists in this.entityInfo just as a safeguard
                 var title = pvEntry.label.replace(/^File:/, '');
-                if (_this6.fileInfo[title]) {
-                  Object.assign(_this6.fileInfo[title], {
+                if (_this6.entityInfo.entities[title]) {
+                  Object.assign(_this6.entityInfo.entities[title], {
                     pageviews: pvEntry.sum,
                     pageviewsAvg: pvEntry.average
                   });
@@ -5763,11 +5762,27 @@ var MediaViews = function (_mix$with) {
         });
       }
     }
+
+    /**
+     * Get the Playcounts API URL for the given file and date range
+     * @param  {string} file - file name without File: prefix
+     * @param  {moment} startDate
+     * @param  {moment} endDate
+     * @return {string} URL
+     */
+
   }, {
     key: 'getMPCApiUrl',
     value: function getMPCApiUrl(file, startDate, endDate) {
       return 'https://tools.wmflabs.org/mediaplaycounts/api/1/FilePlaycount/date_range/' + file + '/' + (startDate.format(this.config.mpcDateFormat) + '/' + endDate.format(this.config.mpcDateFormat));
     }
+
+    /**
+     * Get and process playcounts for the given files
+     * @param  {Array} files - File names without File: prefix
+     * @return {Deferred} Promise resolving with data
+     */
+
   }, {
     key: 'getPlayCounts',
     value: function getPlayCounts(files) {
@@ -5820,34 +5835,11 @@ var MediaViews = function (_mix$with) {
           xhrData.entities.splice(fileIndex, 1);
           xhrData.datasets.splice(fileIndex, 1);
 
-          // if (this.app === 'pageviews' && errorData.status === 404) {
-          //   // check if it is a new page, and if so show a message that the data isn't available yet
-          //   $.ajax({
-          //     url: `https://${this.project}.org/w/api.php?action=query&prop=revisions&rvprop=timestamp` +
-          //       `&rvdir=newer&rvlimit=1&formatversion=2&format=json&titles=${entity}`,
-          //     dataType: 'jsonp'
-          //   }).then(data => {
-          //     const dateCreated = data.query.pages[0].revisions ? data.query.pages[0].revisions[0].timestamp : null;
-          //     if (dateCreated && moment(dateCreated).isAfter(this.maxDate)) {
-          //       const faqLink = `<a href='/pageviews/faq#todays_data'>${$.i18n('learn-more').toLowerCase()}</a>`;
-          //       this.toastWarn($.i18n('new-article-warning', faqLink));
-          //     }
-          //   });
-          // }
-
           var link = _this7.getFileLink(file);
 
-          // // user-friendly error messages
-          // let endpoint = 'pageviews';
-          // if (this.isUniqueDevices()) {
-          //   endpoint = 'unique-devices';
-          // } else if (this.isPagecounts()) {
-          //   endpoint = 'pagecounts';
-          // }
           xhrData.errors.push(link + ': ' + $.i18n('api-error', 'Playcounts API') + ' - ' + errorData.responseJSON.title);
         }).always(function () {
           if (++count === totalRequestCount) {
-            _this7.playCountsData = xhrData;
             dfd.resolve(xhrData);
 
             if (failedFiles.length) {
@@ -5912,11 +5904,11 @@ var MediaViews = function (_mix$with) {
         return a + b.sum;
       }, 0);
       var totals = {
-        label: $.i18n('num-projects', this.formatNumber(datasets.length), datasets.length),
+        label: $.i18n('num-files', this.formatNumber(datasets.length), datasets.length),
         sum: sum,
         average: Math.round(sum / this.numDaysInRange())
       };
-      ['pages', 'articles', 'edits', 'images', 'users', 'activeusers', 'admins'].forEach(function (type) {
+      ['pageviews', 'duration', 'size'].forEach(function (type) {
         totals[type] = datasets.reduce(function (a, b) {
           return a + b[type];
         }, 0);
@@ -5936,23 +5928,57 @@ var MediaViews = function (_mix$with) {
   }, {
     key: 'getSortProperty',
     value: function getSortProperty(item, type) {
-      if (type === 'active-users') {
-        return Number(item.activeusers);
-      } else if (type === 'label') {
-        return item.label;
+      if (type === 'file') {
+        return item.title;
+      } else if (type === 'playcounts') {
+        return item.sum;
+      } else if (type === 'date') {
+        return moment(this.formatTimestamp(item.timestamp), this.dateFormat).unix();
+      } else if (type === 'type') {
+        return item.mediatype;
       }
       return Number(item[type]);
     }
 
     /**
      * Get link to file, or message if querying for all files
-     * @override
+     * @param {string} file - Page title with or without File: prefix
+     * @returns {string} Markup
      */
 
   }, {
     key: 'getFileLink',
     value: function getFileLink(file) {
-      return _get(MediaViews.prototype.__proto__ || Object.getPrototypeOf(MediaViews.prototype), 'getPageLink', this).call(this, file, 'commons.wikimedia.org');
+      file = file.replace(/^File:/, '');
+      return _get(MediaViews.prototype.__proto__ || Object.getPrototypeOf(MediaViews.prototype), 'getPageLink', this).call(this, 'File:' + file, 'commons.wikimedia.org', file);
+    }
+
+    /**
+     * Format timestamp return from MediaWiki API
+     * @param  {string} timestamp Should be in the form YYYY-MM-DDTHH:MM:SSZ
+     * @return {string} Formatted according to this.dateFormat
+     */
+
+  }, {
+    key: 'formatTimestamp',
+    value: function formatTimestamp(timestamp) {
+      return moment(timestamp.substring(0, 10), 'YYYY-MM-DD').format(this.dateFormat);
+    }
+
+    /**
+     * Get a link to view the pageviews for the given file
+     * @param  {string} file File name without File: prefix
+     * @param  {string} text Link text
+     * @return {string} Markup
+     */
+
+  }, {
+    key: 'getPageviewsLink',
+    value: function getPageviewsLink(file, text) {
+      var params = this.getParams(false),
+          // to get start/end date values
+      page = 'File:' + encodeURIComponent(file.score()).replace("'", escape);
+      return '<a target=\'_blank\' href=\'/pageviews?start=' + params.start + '&end=' + params.end + ('&project=commons.wikimedia.org&pages=' + page + '\'>' + text + '</a>');
     }
 
     /**
@@ -6017,18 +6043,40 @@ function _defineProperty(obj, key, value) { if (key in obj) { Object.definePrope
 var templates = {
   chartLegend: function chartLegend(scope) {
     var dataList = function dataList(entity) {
-      var _$$i18n, _infoHash$$$i18n, _infoHash$$$i18n2;
+      var _$$i18n;
 
       var multiEntity = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : false;
 
       var infoHash = _defineProperty({}, $.i18n('playcounts'), (_$$i18n = {}, _defineProperty(_$$i18n, $.i18n('playcounts'), scope.formatNumber(entity.sum)), _defineProperty(_$$i18n, $.i18n('daily-average'), scope.formatNumber(entity.average)), _$$i18n));
 
-      var fileInfo = scope.fileInfo[entity.label],
-          duration = Math.round(fileInfo.duration);
+      // Conditionally add other stats, as they may not be available
+      //   depending on if we're showing stats for a category, a single
+      //   file or multiple files.
 
-      infoHash[$.i18n('pageviews')] = (_infoHash$$$i18n = {}, _defineProperty(_infoHash$$$i18n, $.i18n('pageviews'), scope.formatNumber(fileInfo.pageviews)), _defineProperty(_infoHash$$$i18n, $.i18n('daily-average'), scope.formatNumber(fileInfo.pageviewsAvg)), _infoHash$$$i18n);
+      // Pageviews gets its own heading
+      if (entity.pageviews) {
+        var _infoHash$$$i18n;
 
-      infoHash[$.i18n('statistics')] = (_infoHash$$$i18n2 = {}, _defineProperty(_infoHash$$$i18n2, $.i18n('duration'), $.i18n('num-seconds', duration, scope.formatNumber(duration))), _defineProperty(_infoHash$$$i18n2, $.i18n('size'), scope.formatNumber(fileInfo.size)), _defineProperty(_infoHash$$$i18n2, $.i18n('date'), moment(fileInfo.timestmap).format(scope.dateFormat)), _defineProperty(_infoHash$$$i18n2, $.i18n('type'), fileInfo.mediatype.toLowerCase()), _infoHash$$$i18n2);
+        var _pageviews = multiEntity ? scope.formatNumber(entity.pageviews) : scope.getPageviewsLink(scope.formatNumber(entity.pageviews), entity.pageviews);
+        infoHash[$.i18n('pageviews')] = (_infoHash$$$i18n = {}, _defineProperty(_infoHash$$$i18n, $.i18n('pageviews'), _pageviews), _defineProperty(_infoHash$$$i18n, $.i18n('daily-average'), scope.formatNumber(entity.pageviewsAvg)), _infoHash$$$i18n);
+      }
+
+      var statsKey = $.i18n('statistics');
+      infoHash[statsKey] = {};
+
+      if (entity.duration) {
+        var duration = Math.round(entity.duration);
+        infoHash[statsKey][$.i18n('duration')] = $.i18n('num-seconds', duration, scope.formatNumber(duration));
+      }
+      if (entity.size) {
+        infoHash[statsKey][$.i18n('size')] = $.i18n('num-bytes', scope.formatNumber(entity.size), entity.size);
+      }
+      if (entity.timestamp) {
+        infoHash[statsKey][$.i18n('date')] = scope.formatTimestamp(entity.timestamp);
+      }
+      if (entity.mediatype) {
+        infoHash[statsKey][$.i18n('file-type')] = entity.mediatype.toLowerCase();
+      }
 
       var markup = '';
 
@@ -6043,9 +6091,6 @@ var templates = {
         markup += '</div></div>';
       }
 
-      // if (!multiEntity) {
-      // }
-
       return markup;
     };
 
@@ -6055,30 +6100,37 @@ var templates = {
 
     var sum = scope.outputData.reduce(function (a, b) {
       return a + b.sum;
+    }, 0),
+        pageviews = scope.outputData.reduce(function (a, b) {
+      return a + b.pageviews;
+    }, 0),
+        size = scope.outputData.reduce(function (a, b) {
+      return a + b.size;
     }, 0);
     var totals = {
       sum: sum,
-      average: Math.round(sum / scope.numDaysInRange())
+      average: Math.round(sum / scope.numDaysInRange()),
+      pageviews: pageviews,
+      pageviewsAvg: Math.round(pageviews / scope.numDaysInRange()),
+      duration: scope.outputData.reduce(function (a, b) {
+        return a + b.duration;
+      }, 0),
+      size: size,
+      sizeAvg: Math.round(size / scope.numDaysInRange())
     };
 
-    // pages: scope.outputData.reduce((a, b) => a + b.pages, 0),
-    // articles: scope.outputData.reduce((a, b) => a + b.articles, 0),
-    // edits: scope.outputData.reduce((a, b) => a + b.edits, 0),
-    // images: scope.outputData.reduce((a, b) => a + b.images, 0),
-    // users: scope.outputData.reduce((a, b) => a + b.users, 0),
-    // activeusers: scope.outputData.reduce((a, b) => a + b.activeusers, 0),
-    // admins: scope.outputData.reduce((a, b) => a + b.admins, 0)
     return dataList(totals, true);
   },
   tableRow: function tableRow(scope, item) {
     var last = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : false;
 
     var tag = last ? 'th' : 'td';
-    var linksRow = last ? '' : '\n        <a href="#" target="_blank">' + $.i18n('most-viewed-pages') + '</a>\n      ';
 
     $('.sort-link--sum .col-heading').text($.i18n('playcounts'));
 
-    return '\n      <tr>\n        <' + tag + ' class=\'table-view--color-col\'>\n          <span class=\'table-view--color-block\' style="background:' + item.color + '"></span>\n        </' + tag + '>\n        <' + tag + ' class=\'table-view--project\'>' + (last ? item.label : scope.getFileLink(item.label)) + '</' + tag + '>\n        <' + tag + ' class=\'table-view--views\'>' + scope.formatNumber(item.sum) + '</' + tag + '>\n        <' + tag + ' class=\'table-view--average\'>' + scope.formatNumber(item.average) + '</' + tag + '>\n        <' + tag + '>' + linksRow + '</' + tag + '>\n      </tr>\n    ';
+    var pageviewsLink = last ? scope.formatNumber(item.pageviews) : scope.getPageviewsLink(item.label, scope.formatNumber(item.pageviews));
+
+    return '\n      <tr>\n        <' + tag + ' class=\'table-view--color-col\'>\n          <span class=\'table-view--color-block\' style="background:' + item.color + '"></span>\n        </' + tag + '>\n        <' + tag + ' class=\'table-view--file\'>' + (last ? item.label : scope.getFileLink('File:' + item.label)) + '</' + tag + '>\n        <' + tag + ' class=\'table-view--playcounts\'>' + scope.formatNumber(item.sum) + '</' + tag + '>\n        <' + tag + ' class=\'table-view--average\'>' + scope.formatNumber(item.average) + '</' + tag + '>\n        <' + tag + ' class=\'table-view--pageviews\'>' + pageviewsLink + '</' + tag + '>\n        <' + tag + ' class=\'table-view--duration\'>' + scope.formatNumber(Math.round(item.duration)) + '</' + tag + '>\n        <' + tag + ' class=\'table-view--size\'>' + scope.formatNumber(item.size) + '</' + tag + '>\n        <' + tag + ' class=\'table-view--date\'>' + (last ? '' : scope.formatTimestamp(item.timestamp)) + '</' + tag + '>\n        <' + tag + ' class=\'table-view--file-type\'>' + (last ? '' : item.mediatype) + '</' + tag + '>\n      </tr>\n    ';
   }
 };
 
@@ -6995,7 +7047,7 @@ var ChartHelpers = function ChartHelpers(superclass) {
               options.scale.ticks.beginAtZero = grandMin === 0 || $('.begin-at-zero-option').is(':checked');
             } else {
               options.scales.yAxes[0].ticks.beginAtZero = grandMin === 0 || $('.begin-at-zero-option').is(':checked');
-              options.zoom = ['pageviews', 'siteviews'].includes(this.app) && this.numDaysInRange() > 1 && !this.isMonthly();
+              options.zoom = ['pageviews', 'siteviews', 'mediaviews'].includes(this.app) && this.numDaysInRange() > 1 && !this.isMonthly();
             }
 
             // Show labels if option is checked (for linear charts only)

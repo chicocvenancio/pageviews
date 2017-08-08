@@ -816,7 +816,7 @@ const ChartHelpers = superclass => class extends superclass {
           options.scale.ticks.beginAtZero = grandMin === 0 || $('.begin-at-zero-option').is(':checked');
         } else {
           options.scales.yAxes[0].ticks.beginAtZero = grandMin === 0 || $('.begin-at-zero-option').is(':checked');
-          options.zoom = ['pageviews', 'siteviews'].includes(this.app) && this.numDaysInRange() > 1 && !this.isMonthly();
+          options.zoom = ['pageviews', 'siteviews', 'mediaviews'].includes(this.app) && this.numDaysInRange() > 1 && !this.isMonthly();
         }
 
         // Show labels if option is checked (for linear charts only)

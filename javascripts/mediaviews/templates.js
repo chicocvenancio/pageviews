@@ -20,20 +20,36 @@ const templates = {
         }
       };
 
-      const fileInfo = scope.fileInfo[entity.label],
-        duration = Math.round(fileInfo.duration);
+      // Conditionally add other stats, as they may not be available
+      //   depending on if we're showing stats for a category, a single
+      //   file or multiple files.
 
-      infoHash[$.i18n('pageviews')] = {
-        [$.i18n('pageviews')]: scope.formatNumber(fileInfo.pageviews),
-        [$.i18n('daily-average')]: scope.formatNumber(fileInfo.pageviewsAvg)
-      };
+      // Pageviews gets its own heading
+      if (entity.pageviews) {
+        const pageviews = multiEntity ? scope.formatNumber(entity.pageviews)
+          : scope.getPageviewsLink(scope.formatNumber(entity.pageviews), entity.pageviews);
+        infoHash[$.i18n('pageviews')] = {
+          [$.i18n('pageviews')]: pageviews,
+          [$.i18n('daily-average')]: scope.formatNumber(entity.pageviewsAvg)
+        };
+      }
 
-      infoHash[$.i18n('statistics')] = {
-        [$.i18n('duration')]: $.i18n('num-seconds', duration, scope.formatNumber(duration)),
-        [$.i18n('size')]: scope.formatNumber(fileInfo.size),
-        [$.i18n('date')]: moment(fileInfo.timestmap).format(scope.dateFormat),
-        [$.i18n('type')]: fileInfo.mediatype.toLowerCase()
-      };
+      const statsKey = $.i18n('statistics');
+      infoHash[statsKey] = {};
+
+      if (entity.duration) {
+        const duration = Math.round(entity.duration);
+        infoHash[statsKey][$.i18n('duration')] = $.i18n('num-seconds', duration, scope.formatNumber(duration));
+      }
+      if (entity.size) {
+        infoHash[statsKey][$.i18n('size')] = $.i18n('num-bytes', scope.formatNumber(entity.size), entity.size);
+      }
+      if (entity.timestamp) {
+        infoHash[statsKey][$.i18n('date')] = scope.formatTimestamp(entity.timestamp);
+      }
+      if (entity.mediatype) {
+        infoHash[statsKey][$.i18n('file-type')] = entity.mediatype.toLowerCase();
+      }
 
       let markup = '';
 
@@ -56,9 +72,6 @@ const templates = {
         markup += '</div></div>';
       }
 
-      // if (!multiEntity) {
-      // }
-
       return markup;
     };
 
@@ -66,17 +79,17 @@ const templates = {
       return dataList(scope.outputData[0]);
     }
 
-    const sum = scope.outputData.reduce((a,b) => a + b.sum, 0);
+    const sum = scope.outputData.reduce((a,b) => a + b.sum, 0),
+      pageviews = scope.outputData.reduce((a, b) => a + b.pageviews, 0),
+      size = scope.outputData.reduce((a, b) => a + b.size, 0);
     const totals = {
       sum,
       average: Math.round(sum / scope.numDaysInRange()),
-      // pages: scope.outputData.reduce((a, b) => a + b.pages, 0),
-      // articles: scope.outputData.reduce((a, b) => a + b.articles, 0),
-      // edits: scope.outputData.reduce((a, b) => a + b.edits, 0),
-      // images: scope.outputData.reduce((a, b) => a + b.images, 0),
-      // users: scope.outputData.reduce((a, b) => a + b.users, 0),
-      // activeusers: scope.outputData.reduce((a, b) => a + b.activeusers, 0),
-      // admins: scope.outputData.reduce((a, b) => a + b.admins, 0)
+      pageviews,
+      pageviewsAvg: Math.round(pageviews / scope.numDaysInRange()),
+      duration: scope.outputData.reduce((a, b) => a + b.duration, 0),
+      size,
+      sizeAvg: Math.round(size / scope.numDaysInRange())
     };
 
     return dataList(totals, true);
@@ -84,21 +97,25 @@ const templates = {
 
   tableRow(scope, item, last = false) {
     const tag = last ? 'th' : 'td';
-    const linksRow = last ? '' : `
-        <a href="#" target="_blank">${$.i18n('most-viewed-pages')}</a>
-      `;
 
     $('.sort-link--sum .col-heading').text($.i18n('playcounts'));
+
+    const pageviewsLink = last ? scope.formatNumber(item.pageviews)
+      : scope.getPageviewsLink(item.label, scope.formatNumber(item.pageviews));
 
     return `
       <tr>
         <${tag} class='table-view--color-col'>
           <span class='table-view--color-block' style="background:${item.color}"></span>
         </${tag}>
-        <${tag} class='table-view--project'>${last ? item.label : scope.getFileLink(item.label)}</${tag}>
-        <${tag} class='table-view--views'>${scope.formatNumber(item.sum)}</${tag}>
+        <${tag} class='table-view--file'>${last ? item.label : scope.getFileLink(`File:${item.label}`)}</${tag}>
+        <${tag} class='table-view--playcounts'>${scope.formatNumber(item.sum)}</${tag}>
         <${tag} class='table-view--average'>${scope.formatNumber(item.average)}</${tag}>
-        <${tag}>${linksRow}</${tag}>
+        <${tag} class='table-view--pageviews'>${pageviewsLink}</${tag}>
+        <${tag} class='table-view--duration'>${scope.formatNumber(Math.round(item.duration))}</${tag}>
+        <${tag} class='table-view--size'>${scope.formatNumber(item.size)}</${tag}>
+        <${tag} class='table-view--date'>${last ? '' : scope.formatTimestamp(item.timestamp)}</${tag}>
+        <${tag} class='table-view--file-type'>${last ? '' : item.mediatype}</${tag}>
       </tr>
     `;
   }
