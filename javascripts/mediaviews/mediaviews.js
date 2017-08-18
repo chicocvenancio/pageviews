@@ -59,11 +59,12 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
     this.validateDateRange(params);
     this.resetSelect2();
 
-    const noFiles = !params.files || !params.files.length || (params.files.length === 1 && !params.files[0]);
+    let noFiles = !params.files || !params.files.length || (params.files.length === 1 && !params.files[0]);
     const noCategory = !params.category || !params.category.length;
 
     if (noFiles && noCategory) {
       params.files = this.config.defaults.files;
+      noFiles = false;
     } else if (!noFiles && params.files.length > 10) {
       params.files = params.files.slice(0, 10); // max 10 files
     }
