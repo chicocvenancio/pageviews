@@ -329,6 +329,7 @@
 	"spider": "Label for option to view statistics for [[wikipedia:Web crawler|spider]] (web crawler) agents only (not users or bots)\n{{Identical|Spider}}",
 	"statistics": "Link to show a project's statistics page\n{{Identical|Statistics}}",
 	"su": "Abbreviation for Sunday, a day of the week.",
+	"subcategories": "Label for number of categories within a category.\n{{Identical|Subcategory}}",
 	"submit": "The text for the button to submit the form in the Langviews application.\n{{Identical|Submit}}",
 	"subpages": "Label for the 'Subpages' input field on the Massviews tool. See the wikidata item for 'Project:Subpages' for possible translations: https://www.wikidata.org/wiki/Q4592255\n{{Identical|Subpage}}",
 	"target": "In the Redirect Views app, a page of all redirects to a given page are shown. This 'Target' text is shown next to the given page, which is the target of all the other redirects. This text should be lowercased, if possible.\n{{Identical|Target}}",

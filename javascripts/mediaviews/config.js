@@ -14,7 +14,6 @@ const templates = require('./templates');
 const config = {
   chart: '.aqs-chart',
   chartLegend: templates.chartLegend,
-  dataSourceSelector: '#data-source-select',
   dateRangeSelector: '.aqs-date-range-selector',
   defaults: {
     dateRange: 'latest-20',
@@ -25,11 +24,7 @@ const config = {
   mpcDateFormat: 'YYYYMMDD',
   select2Input: '.aqs-select2-selector',
   templates,
-  // validateParams: ['source'],
-  validateParams: [],
-  validParams: {
-    source: ['category', 'file']
-  }
+  validateParams: []
 };
 
 module.exports = config;

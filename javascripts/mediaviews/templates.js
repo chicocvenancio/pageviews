@@ -37,18 +37,27 @@ const templates = {
       const statsKey = $.i18n('statistics');
       infoHash[statsKey] = {};
 
-      if (entity.duration) {
-        const duration = Math.round(entity.duration);
-        infoHash[statsKey][$.i18n('duration')] = $.i18n('num-seconds', duration, scope.formatNumber(duration));
-      }
-      if (entity.size) {
-        infoHash[statsKey][$.i18n('size')] = $.i18n('num-bytes', scope.formatNumber(entity.size), entity.size);
-      }
-      if (entity.timestamp) {
-        infoHash[statsKey][$.i18n('date')] = scope.formatTimestamp(entity.timestamp);
-      }
-      if (entity.mediatype) {
-        infoHash[statsKey][$.i18n('file-type')] = entity.mediatype.toLowerCase();
+      if (scope.isCategory()) {
+        if (entity.files) {
+          infoHash[statsKey][$.i18n('files')] = scope.formatNumber(entity.files);
+        }
+        if (entity.subcats) {
+          infoHash[statsKey][$.i18n('subcategories')] = scope.formatNumber(entity.subcats);
+        }
+      } else {
+        if (entity.duration) {
+          const duration = Math.round(entity.duration);
+          infoHash[statsKey][$.i18n('duration')] = $.i18n('num-seconds', duration, scope.formatNumber(duration));
+        }
+        if (entity.size) {
+          infoHash[statsKey][$.i18n('size')] = $.i18n('num-bytes', scope.formatNumber(entity.size), entity.size);
+        }
+        if (entity.timestamp) {
+          infoHash[statsKey][$.i18n('date')] = scope.formatTimestamp(entity.timestamp);
+        }
+        if (entity.mediatype) {
+          infoHash[statsKey][$.i18n('file-type')] = entity.mediatype.toLowerCase();
+        }
       }
 
       let markup = '';

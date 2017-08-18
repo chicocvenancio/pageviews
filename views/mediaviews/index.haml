@@ -31,23 +31,24 @@
                 %li
                   %a(href="#" data-value="#{$offset}")= $offset
           %input.form-control.aqs-date-range-selector#range-input
-        %div.all-projects-selector
+        %div.data-source
           %label
             = $I18N->msg( 'query-for' )
           %div.radio
             %label
-              %input.all-projects-radio(type="radio" name="source" value="files" checked="checked")
+              %input(type="radio" name="source" value="files" checked="checked")
                 = $I18N->msg( 'files' )
           %div.radio
             %label
-              %input.all-projects-radio#all-projects(type="radio" name="source" value="category")
+              %input#category_source(type="radio" name="source" value="category")
                 = $I18N->msg( 'category' )
 
     %main.col-lg-8.col-md-10
       / File selector
       %div.file-selector
         %label(for="site-input")
-          = $I18N->msg( 'files' )
+          %span.select2-title
+            = $I18N->msg( 'files' )
           %small.text-muted.num-entities-info
             = $I18N->msg( 'num-files-info', [ 'variables' => [ 10 ] ] )
         %span.clear-pages.pull-right

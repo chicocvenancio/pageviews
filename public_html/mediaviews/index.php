@@ -42,20 +42,20 @@
           </div>
           <input class="form-control aqs-date-range-selector" id="range-input">
         </div>
-        <div class="all-projects-selector">
+        <div class="data-source">
           <label>
             <?php echo $I18N->msg( 'query-for' ); ?>
           </label>
           <div class="radio">
             <label>
-              <input class="all-projects-radio" type="radio" name="source" value="files" checked="checked">
+              <input type="radio" name="source" value="files" checked="checked">
                 <?php echo $I18N->msg( 'files' ); ?>
               </input>
             </label>
           </div>
           <div class="radio">
             <label>
-              <input class="all-projects-radio" id="all-projects" type="radio" name="source" value="category">
+              <input id="category_source" type="radio" name="source" value="category">
                 <?php echo $I18N->msg( 'category' ); ?>
               </input>
             </label>
@@ -67,7 +67,9 @@
       <!-- File selector -->
       <div class="file-selector">
         <label for="site-input">
-          <?php echo $I18N->msg( 'files' ); ?>
+          <span class="select2-title">
+            <?php echo $I18N->msg( 'files' ); ?>
+          </span>
           <small class="text-muted num-entities-info">
             <?php echo $I18N->msg( 'num-files-info', [ 'variables' => [ 10 ] ] ); ?>
           </small>

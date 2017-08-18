@@ -50,34 +50,42 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
   popParams() {
     this.startSpinny();
 
-    let params = this.validateParams(
-      this.parseQueryString('files')
-    );
+    let params = this.parseQueryString('files');
 
     $(this.config.dataSourceSelector).val(params.source);
-    this.setupDataSourceSelector();
     $(this.config.platformSelector).val(params.platform);
 
     this.setupDateRangeSelector();
     this.validateDateRange(params);
     this.resetSelect2();
 
-    if (!params.files || !params.files.length || (params.files.length === 1 && !params.files[0])) {
+    const noFiles = !params.files || !params.files.length || (params.files.length === 1 && !params.files[0]);
+    const noCategory = !params.category || !params.category.length;
+
+    if (noFiles && noCategory) {
       params.files = this.config.defaults.files;
-    } else if (params.files.length > 10) {
+    } else if (!noFiles && params.files.length > 10) {
       params.files = params.files.slice(0, 10); // max 10 files
     }
 
-    this.setInitialChartType(params.files.length);
-    this.setSelect2Defaults(params.files);
+    $('#category_source').prop('checked', noFiles);
+    this.setupDataSourceSelector();
+
+    this.setInitialChartType(params.category ? 1 : params.files.length);
+    this.setSelect2Defaults(params.files || [params.category]);
   }
 
   /**
    * Get statistics for the given files
-   * @param  {Array} files - file names, ['Example.wav', 'Example.webm', ...]
+   * @param  {Array} files - file names, ['Example.wav', 'Example.webm', ...], or a single category
+   * @param  {boolean} [isCategory] Whether we're querying for a category (otherwise they're files)
    * @return {Deferred} Promise resolving with the stats for each file
    */
-  getFileInfo(files) {
+  getFileInfo(files, isCategory = false) {
+    if (isCategory) {
+      return this.getCategoryInfo(files[0]);
+    }
+
     let dfd = $.Deferred();
 
     // Don't re-query for files we already have data on.
@@ -85,6 +93,11 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
     files = files.filter(file => {
       return !currentFiles.includes(file);
     });
+
+    // We've already got data on all the files
+    if (!files.length) {
+      return dfd.resolve({});
+    }
 
     // First make array of pages *fully* URI-encoded so we can easily reference them
     // The issue is the API only returns encoded file names, so we have to reliably be
@@ -96,7 +109,7 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
       //   that JavaScript gets confused about when decoding
     }
 
-    return $.ajax({
+    $.ajax({
       url: 'https://commons.wikimedia.org/w/api.php?action=query&prop=imageinfo&' +
         `iiprop=mediatype|size|timestamp&formatversion=2&format=json&titles=${files.join('|')}`,
       dataType: 'jsonp'
@@ -119,7 +132,7 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
         let fileInfo = data.query.pages.find(p => p.title === file);
 
         // Throw error and remove from list if missing
-        if (file.missing) {
+        if (fileInfo.missing) {
           this.writeMessage(`${this.getFileLink(file)}: ${$.i18n('api-error-no-data')}`);
           return;
         }
@@ -129,7 +142,7 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
 
         // Throw error and remove from list if not audio or video
         if (!['AUDIO', 'VIDEO'].includes(fileInfo.mediatype)) {
-          this.writeMessage($.i18n('invalid-media-file', this.getFileLink(file)));
+          this.toastWarn($.i18n('invalid-media-file', this.getFileLink(file)));
           return;
         }
 
@@ -144,17 +157,63 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
     }).fail(() => {
       dfd.resolve({}); // Simply won't show the data if it could not be fetched
     });
+
+    return dfd;
   }
 
   /**
-   * Get all user-inputted parameters except the files
+   * Get statistics for the given category
+   * @param  {string} category - Category name with or without Category: prefix
+   * @return {Deferred} Promise resolving with the stats
+   */
+  getCategoryInfo(category) {
+    let dfd = $.Deferred();
+    category = category.replace(/^Category:/, '');
+
+    $.ajax({
+      url: 'https://commons.wikimedia.org/w/api.php?action=query&prop=categoryinfo' +
+        `&titles=Category:${category}&format=json&formatversion=2`,
+      dataType: 'jsonp'
+    }).done(data => {
+      if (data.query.normalized) {
+        category = data.query.normalized[0].to.replace(/^Category:/, '');
+      }
+
+      let categoryInfo = data.query.pages[0];
+
+      // Throw error and remove from list if missing
+      if (!categoryInfo || categoryInfo.missing) {
+        this.writeMessage(`${this.getCategoryLink(category)}: ${$.i18n('api-error-no-data')}`);
+        return;
+      }
+
+      // Otherwise normalize data down to just what we want (categoryinfo hash)
+      categoryInfo = categoryInfo.categoryinfo;
+
+      let categoryData = {
+        [category.replace(/^Category:/, '')]: Object.assign({
+          title: category
+        }, categoryInfo)
+      };
+
+      this.entityInfo = { entities: categoryData };
+
+      return dfd.resolve(this.entityInfo);
+    }).fail(() => {
+      // Simply won't show the data if it could not be fetched
+      dfd.resolve({});
+    });
+
+    return dfd;
+  }
+
+  /**
+   * Get all user-inputted parameters except the files/category
    * @param {boolean} [specialRange] whether or not to include the special range instead of start/end, if applicable
    * @return {Object} source, etc.
    */
   getParams(specialRange = true) {
-    let params = {
-      source: $(this.config.dataSourceSelector).val()
-    };
+    let params = {};
 
     /**
      * Override start and end with custom range values, if configured (set by URL params or setupDateRangeSelector)
@@ -179,22 +238,24 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
    * Called whenever we go to update the chart
    */
   pushParams() {
-    const files = $(this.config.select2Input).select2('val') || [];
+    const files = $(this.config.select2Input).select2('val') || [],
+      targetKeyword = this.isCategory() ? 'category' : 'files';
 
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, document.title,
-        `?${$.param(this.getParams())}&files=${files.join('|')}`
+        `?${$.param(this.getParams())}&${targetKeyword}=${files.join('|')}`
       );
     }
 
-    $('.permalink').prop('href', `?${$.param(this.getPermaLink())}&files=${files.join('%7C')}`);
+    $('.permalink').prop('href', `?${$.param(this.getPermaLink())}&${targetKeyword}=${files.join('%7C')}`);
   }
 
   /**
    * Sets up the file selector and adds listener to update chart
    */
   setupSelect2() {
-    const $select2Input = $(this.config.select2Input);
+    const $select2Input = $(this.config.select2Input),
+      isCategory = this.isCategory();
 
     let params = {
       ajax: {
@@ -208,19 +269,19 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
             list: 'prefixsearch',
             format: 'json',
             pssearch: search.term || '',
-            psnamespace: 6,
+            psnamespace: this.isCategory() ? 14 : 6,
             cirrusUseCompletionSuggester: 'yes'
           };
         },
-        processResults: function(data) {
+        processResults: data => {
           const query = data ? data.query : {};
           let results = [];
 
           if (!query) return {results};
 
           if (query.prefixsearch.length) {
-            results = query.prefixsearch.map(function(elem) {
-              const title = elem.title.replace(/^File:/, '');
+            results = query.prefixsearch.map(elem => {
+              const title = this.stripNamespace(elem.title, isCategory);
               return {
                 id: title.score(),
                 text: title
@@ -245,15 +306,6 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
   }
 
   /**
-   * Setup listeners for the data source selector
-   */
-  setupDataSourceSelector() {
-    $(this.config.dataSourceSelector).on('change', e => {
-      this.processInput();
-    });
-  }
-
-  /**
    * General place to add page-wide listeners
    * @override
    */
@@ -268,6 +320,24 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
     $('.clear-pages').on('click', () => {
       this.resetView(true);
       this.focusSelect2();
+    });
+  }
+
+  /**
+   * Setup listeners for the data source selector, and initialize values for the platform dropdown
+   */
+  setupDataSourceSelector() {
+    $('.data-source').on('change', e => {
+      this.resetView(true);
+      this.focusSelect2();
+
+      if (e.target.value === 'category') {
+        $('.select2-title').text($.i18n('category'));
+        $('.num-entities-info').hide();
+      } else {
+        $('.select2-title').text($.i18n('files'));
+        $('.num-entities-info').show();
+      }
     });
   }
 
@@ -303,6 +373,7 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
     this.params = location.search;
 
     const files = $(config.select2Input).select2('val') || [];
+    const isCategory = this.isCategory();
 
     if (!files.length) {
       return this.resetView();
@@ -327,9 +398,14 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
       delete this.entityInfo.entities[removedFile];
       this.updateChart();
     } else {
-      this.getFileInfo(files).then(() => {
-        this.getPlayCounts(files).done(xhrData => {
-          const fileNames = files.map(file => `File:${file}`);
+      this.getFileInfo(files, isCategory).then(() => {
+        this.getPlayCounts(files, isCategory).done(xhrData => {
+          // No pageviews for categories
+          if (isCategory) {
+            return this.updateChart(xhrData);
+          }
+
+          const fileNames = files.map(file => `${isCategory ? 'Category' : 'File'}:${file}`);
           this.getPageViewsData(fileNames).done(pvData => {
             pvData = this.buildChartData(pvData.datasets, fileNames, 'views');
 
@@ -357,19 +433,21 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
    * @param  {string} file - file name without File: prefix
    * @param  {moment} startDate
    * @param  {moment} endDate
+   * @param  {boolean} [category] Whether we're querying for a category (otherwise it's a file)
    * @return {string} URL
    */
-  getMPCApiUrl(file, startDate, endDate) {
-    return `https://tools.wmflabs.org/mediaplaycounts/api/1/FilePlaycount/date_range/${file}/` +
-      `${startDate.format(this.config.mpcDateFormat)}/${endDate.format(this.config.mpcDateFormat)}`;
+  getMPCApiUrl(file, startDate, endDate, category = false) {
+    return `https://partnermetrics.wmflabs.org/mediaplaycounts/api/2/${category ? 'category' : 'file'}_playcount/` +
+      `date_range/${file}/${startDate.format(this.config.mpcDateFormat)}/${endDate.format(this.config.mpcDateFormat)}`;
   }
 
   /**
    * Get and process playcounts for the given files
-   * @param  {Array} files - File names without File: prefix
+   * @param  {Array} files - File or category names without File:/Category: prefix
+   * @param  {boolean} [isCategory] Whether we're querying for categories (otherwise files)
    * @return {Deferred} Promise resolving with data
    */
-  getPlayCounts(files) {
+  getPlayCounts(files, isCategory = false) {
     let dfd = $.Deferred(),
       totalRequestCount = files.length,
       failedFiles = [],
@@ -417,7 +495,7 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
         xhrData.entities.splice(fileIndex, 1);
         xhrData.datasets.splice(fileIndex, 1);
 
-        let link = this.getFileLink(file);
+        let link = this.getFileLink(file, isCategory);
 
         xhrData.errors.push(
           `${link}: ${$.i18n('api-error', 'Playcounts API')} - ${errorData.responseJSON.title}`
@@ -430,7 +508,7 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
             this.writeMessage($.i18n(
               'api-error-timeout',
               '<ul>' +
-              failedFiles.map(failedFile => `<li>${this.getFileLink(failedFile)}</li>`).join('') +
+              failedFiles.map(failedFile => `<li>${this.getFileLink(failedFile, isCategory)}</li>`).join('') +
               '</ul>'
             ));
           }
@@ -514,13 +592,26 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
   }
 
   /**
-   * Get link to file, or message if querying for all files
+   * Get link to file
    * @param {string} file - Page title with or without File: prefix
+   * @param  {boolean} [isCategory] Whether to link to a category (otherwise it's a file)
    * @returns {string} Markup
    */
-  getFileLink(file) {
-    file = file.replace(/^File:/, '');
-    return super.getPageLink(`File:${file}`, 'commons.wikimedia.org', file);
+  getFileLink(file, isCategory = false) {
+    return super.getPageLink(
+      this.addNamespace(file, isCategory),
+      'commons.wikimedia.org',
+      file
+    );
+  }
+
+  /**
+   * Get link to category
+   * @param {string} category - Page title with or without Category: prefix
+   * @returns {string} Markup
+   */
+  getCategoryLink(category) {
+    return getFileLink(category, true);
   }
 
   /**
@@ -534,26 +625,61 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
 
   /**
    * Get a link to view the pageviews for the given file
-   * @param  {string} file File name without File: prefix
+   * @param  {string} file File or category name with or without namespace prefix
    * @param  {string} text Link text
    * @return {string} Markup
    */
   getPageviewsLink(file, text) {
     const params = this.getParams(false), // to get start/end date values
-      page = `File:${encodeURIComponent(file.score()).replace("'", escape)}`;
+      page = this.addNamespace(
+        encodeURIComponent(file.score()).replace("'", escape),
+        this.isCategory()
+      );
     return `<a target='_blank' href='/pageviews?start=${params.start}&end=${params.end}` +
       `&project=commons.wikimedia.org&pages=${page}'>${text}</a>`;
+  }
+
+  /**
+   * Are we querying for files or a category?
+   * @returns {Boolean} yes or no
+   */
+  isCategory() {
+    return $('#category_source').is(':checked');
+  }
+
+  /**
+   * Add or remove namespace from category or file
+   * @param {string} entity File or category name
+   * @param {boolean} [isCategory] True if category, false if file
+   * @param {boolean} [readd] Make sure the namespace IS there, but only once
+   * @returns {string}
+   */
+  stripNamespace(entity, isCategory, readd = false) {
+    const ns = isCategory ? 'Category' : 'File';
+    entity = entity.replace(new RegExp(`^${ns}:`), '');
+    return readd ? `${ns}:${entity}` : entity;
+  }
+
+  /**
+   * Add namespace to category or file name
+   * @param {string} entity File or category name
+   * @param {boolean} [isCategory] True if category, false if file
+   * @returns {string}
+   */
+  addNamespace(entity, isCategory) {
+    return this.stripNamespace(entity, isCategory, true);
   }
 
   /**
    * Show info below the chart when there is only one file being queried
    */
   showSingleEntityLegend() {
-    const file = this.outputData[0];
+    const file = this.outputData[0],
+      isCategory = this.isCategory();
 
     $('.table-view').hide();
     $('.single-entity-stats').html(`
-      ${this.getFileLink(`File:${file.label}`)}
+      ${this.getFileLink(this.addNamespace(file.label, isCategory), isCategory)}
       &middot;
       <span class='text-muted'>
         ${$(this.config.dateRangeSelector).val()}
