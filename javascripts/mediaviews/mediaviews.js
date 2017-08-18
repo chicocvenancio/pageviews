@@ -611,7 +611,7 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
    * @returns {string} Markup
    */
   getCategoryLink(category) {
-    return getFileLink(category, true);
+    return this.getFileLink(category, true);
   }
 
   /**
