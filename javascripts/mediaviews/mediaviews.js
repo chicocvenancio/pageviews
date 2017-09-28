@@ -438,8 +438,9 @@ class MediaViews extends mix(Pv).with(ChartHelpers) {
    * @return {string} URL
    */
   getMPCApiUrl(file, startDate, endDate, category = false) {
-    return `https://partnermetrics.wmflabs.org/mediaplaycounts/api/2/${category ? 'category' : 'file'}_playcount/` +
+    const endpoint = `https://partnermetrics.wmflabs.org/mediaplaycounts/api/2/${category ? 'category' : 'file'}_playcount/` +
       `date_range/${file}/${startDate.format(this.config.mpcDateFormat)}/${endDate.format(this.config.mpcDateFormat)}`;
+    return `/mediaviews/api.php?endpoint=${endpoint}`;
   }
 
   /**
